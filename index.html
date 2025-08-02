@@ -6,73 +6,21 @@
 <title>Sierra Leone DAP Dashboard</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-    body, html {
-      margin: 0;
-      height: 100%;
-      font-family: Arial, sans-serif;
-    }
-    header {
-      background: #2c3e50;
-      color: white;
-      padding: 10px;
-      text-align: center;
-    }
-    #main {
-      display: flex;
-      height: calc(100vh - 60px);
-    }
-    #leftPanel {
-      flex: 3;
-      display: flex;
-      flex-direction: column;
-      padding: 10px;
-      box-sizing: border-box;
-      overflow-y: auto;
-    }
-    #chartsContainer {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      grid-gap: 15px;
-    }
-    .chart-box {
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 10px;
-      text-align: center;
-    }
-    #controls {
-      display: flex;
-      gap: 10px;
-      padding: 10px;
-      background: #f8f8f8;
-      margin-bottom: 10px;
-      flex-wrap: wrap;
-    }
-    #sidebar {
-      flex: 1;
-      background: #f4f4f4;
-      padding: 10px;
-      overflow-y: auto;
-      border-left: 1px solid #ddd;
-    }
-    .location-item {
-      padding: 6px;
-      cursor: pointer;
-      border-bottom: 1px solid #ccc;
-    }
-    .location-item:hover {
-      background: #eef;
-    }
-    #mapView {
-      display: none;
-      height: 100%;
-    }
-    #sidebarDetails img {
-      width: 100%;
-      border-radius: 8px;
-      margin-bottom: 8px;
-    }
+    body, html { margin: 0; height: 100%; font-family: Arial, sans-serif; }
+    header { background: #2c3e50; color: white; padding: 10px; text-align: center; }
+    #main { display: flex; height: calc(100vh - 60px); }
+    #leftPanel { flex: 3; display: flex; flex-direction: column; padding: 10px; box-sizing: border-box; overflow-y: auto; }
+    #chartsContainer { display: grid; grid-template-columns: 1fr 1fr; grid-gap: 15px; }
+    .chart-box { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 10px; text-align: center; position: relative; }
+    .export-btn { font-size: 12px; padding: 4px 6px; margin-top: 6px; cursor: pointer; }
+    #controls { display: flex; gap: 10px; padding: 10px; background: #f8f8f8; margin-bottom: 10px; flex-wrap: wrap; }
+    #sidebar { flex: 1; background: #f4f4f4; padding: 10px; overflow-y: auto; border-left: 1px solid #ddd; }
+    .location-item { padding: 6px; cursor: pointer; border-bottom: 1px solid #ccc; }
+    .location-item:hover { background: #eef; }
+    #mapView { display: none; height: 100%; }
+    #sidebarDetails img { width: 100%; border-radius: 8px; margin-bottom: 8px; }
+    #exportControls { margin: 10px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+    button { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -88,24 +36,37 @@
       <select id="districtFilter"><option value="">All Districts</option></select>
       <button id="resetBtn">🔄 Reset</button>
     </div>
+
+    <!-- Export and Print Buttons -->
+    <div id="exportControls">
+      <button id="downloadPDF">📄 Download All Charts (PDF)</button>
+      <button id="downloadCSV">⬇ Export Location List (CSV)</button>
+      <button id="printDashboard">🖨 Print Dashboard</button>
+    </div>
+
     <div id="chartsContainer">
       <div class="chart-box">
         <h3>Locations by Province</h3>
         <canvas id="provinceChart"></canvas>
+        <button class="export-btn" onclick="downloadChart(provinceChart, 'province_chart.png')">Download PNG</button>
       </div>
       <div class="chart-box">
         <h3>Locations by District</h3>
         <canvas id="districtChart"></canvas>
+        <button class="export-btn" onclick="downloadChart(districtChart, 'district_chart.png')">Download PNG</button>
       </div>
       <div class="chart-box">
         <h3>Final Verdict</h3>
         <canvas id="verdictChart"></canvas>
+        <button class="export-btn" onclick="downloadChart(verdictChart, 'verdict_chart.png')">Download PNG</button>
       </div>
       <div class="chart-box">
         <h3>Building Condition</h3>
         <canvas id="conditionChart"></canvas>
+        <button class="export-btn" onclick="downloadChart(conditionChart, 'condition_chart.png')">Download PNG</button>
       </div>
     </div>
+
     <div id="mapView">
       <button id="backBtn" style="margin:10px;">← Back to Dashboard</button>
       <div style="display:flex;height:90%;">
@@ -130,8 +91,11 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
 <script>
-// ================== DATA ===================
+// ================== FULL DATASET ===================
 const locations = [
 
   {name:"Central Library HQ", district:"Western Area Urban (Freetown)", region:"Western", lat:8.4860125, lon:-13.2328594, condition:"Excellent", power:"Grid", verdict:"Conditionally Feasible", notes:"Work station is available but not functional. Machines are faulty and incomplete", score:"11", download:"781", upload:"9", latency:"359", Pluscode:"FQP8+CV2", image:"images/Central_Library_HQ.jpg"},
@@ -217,37 +181,38 @@ const locations = [
 
 
 ];
+
 // ================== UI ELEMENTS ===================
-const provinceFilter = document.getElementById('provinceFilter');
-const districtFilter = document.getElementById('districtFilter');
-const searchInput = document.getElementById('searchInput');
-const locationList = document.getElementById('locationList');
-const backBtn = document.getElementById('backBtn');
-const mapView = document.getElementById('mapView');
-const chartsContainer = document.getElementById('chartsContainer');
-const resetBtn = document.getElementById('resetBtn');
+const provinceFilter=document.getElementById('provinceFilter');
+const districtFilter=document.getElementById('districtFilter');
+const searchInput=document.getElementById('searchInput');
+const locationList=document.getElementById('locationList');
+const backBtn=document.getElementById('backBtn');
+const mapView=document.getElementById('mapView');
+const chartsContainer=document.getElementById('chartsContainer');
+const resetBtn=document.getElementById('resetBtn');
 
-let map, markers = [];
+let map,markers=[];
 
-// Populate filters
-const provinces = [...new Set(locations.map(l=>l.region))];
+// Populate Filters
+const provinces=[...new Set(locations.map(l=>l.region))];
 provinces.forEach(p=>provinceFilter.innerHTML+=`<option value="${p}">${p}</option>`);
-const districts = [...new Set(locations.map(l=>l.district))];
+const districts=[...new Set(locations.map(l=>l.district))];
 districts.forEach(d=>districtFilter.innerHTML+=`<option value="${d}">${d}</option>`);
 
 // Filtering
 function getFilteredLocations(){
-  const search = searchInput.value.toLowerCase();
-  const prov = provinceFilter.value;
-  const dist = districtFilter.value;
+  const search=searchInput.value.toLowerCase();
+  const prov=provinceFilter.value;
+  const dist=districtFilter.value;
   return locations.filter(l=>
-    l.name.toLowerCase().includes(search) &&
-    (!prov || l.region===prov) &&
-    (!dist || l.district===dist)
+    l.name.toLowerCase().includes(search)&&
+    (!prov||l.region===prov)&&
+    (!dist||l.district===dist)
   );
 }
 
-// Render sidebar list
+// Render Sidebar List
 function renderList(data){
   locationList.innerHTML="";
   data.forEach(loc=>{
@@ -278,87 +243,85 @@ function updateCharts(filtered){
   provinceChart=new Chart(document.getElementById('provinceChart'),{
     type:'bar',
     data:{labels:Object.keys(provCounts),datasets:[{data:Object.values(provCounts),backgroundColor:['#f44336','#4caf50','#ff9800','#3f51b5']}]},
-    options:{onClick:(e,i)=>{if(i.length){provinceFilter.value=e.chart.data.labels[i[0].index];refresh();}}}
+    options:{
+      onClick:(evt,elements)=>{
+        if(elements.length>0){
+          const index=elements[0].index;
+          provinceFilter.value=provinceChart.data.labels[index];
+          refresh();
+        }
+      }
+    }
   });
+
   districtChart=new Chart(document.getElementById('districtChart'),{
     type:'bar',
-    data:{labels:Object.keys(distCounts),datasets:[{data:Object.values(distCounts),backgroundColor:Object.keys(distCounts).map(()=>randomColor())}]}
+    data:{labels:Object.keys(distCounts),datasets:[{data:Object.values(distCounts),backgroundColor:Object.keys(distCounts).map(()=>randomColor())}]},
+    options:{
+      onClick:(evt,elements)=>{
+        if(elements.length>0){
+          const index=elements[0].index;
+          districtFilter.value=districtChart.data.labels[index];
+          refresh();
+        }
+      }
+    }
   });
+
   verdictChart=new Chart(document.getElementById('verdictChart'),{
     type:'pie',
     data:{labels:Object.keys(verdictCounts),datasets:[{data:Object.values(verdictCounts),backgroundColor:['#EDC001','#f44336','#4caf50']}]}
   });
+
   conditionChart=new Chart(document.getElementById('conditionChart'),{
     type:'pie',
     data:{labels:Object.keys(condCounts),datasets:[{data:Object.values(condCounts),backgroundColor:['green','lightblue','#EDC001','red']}]}
   });
 }
+
 function randomColor(){return '#'+Math.floor(Math.random()*16777215).toString(16);}
 
 // Map
 function showMap(loc){
-  chartsContainer.style.display = "none";
-  mapView.style.display = "block";
-
-  // Fallback coordinates if lat/lon are missing
-  const coords = (loc.lat && loc.lon) ? [loc.lat, loc.lon] : [8.4844, -13.2344]; // Default Freetown
-
+  chartsContainer.style.display="none";
+  mapView.style.display="block";
+  const coords=(loc.lat&&loc.lon)?[loc.lat,loc.lon]:[8.4844,-13.2344];
   if(!map){
-    map = L.map('map').setView(coords, 8);
+    map=L.map('map').setView(coords,8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-  } else {
-    map.setView(coords, 8);
+  }else{
+    map.setView(coords,8);
   }
-
-  // Clear previous markers
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
-
-  // Add markers for all filtered locations
-  getFilteredLocations().forEach(l => {
-    const markerCoords = (l.lat && l.lon) ? [l.lat, l.lon] : [8.4844, -13.2344];
-    const color = l.verdict === "Feasible" ? "green" : (l.verdict === "Conditionally Feasible" ? "orange" : "red");
-    const marker = L.circleMarker(markerCoords, {color: color, radius: 8}).addTo(map);
+  markers.forEach(m=>map.removeLayer(m));
+  markers=[];
+  getFilteredLocations().forEach(l=>{
+    const markerCoords=(l.lat&&l.lon)?[l.lat,l.lon]:[8.4844,-13.2344];
+    const color=l.verdict==="Feasible"?"green":(l.verdict==="Conditionally Feasible"?"orange":"red");
+    const marker=L.circleMarker(markerCoords,{color:color,radius:8}).addTo(map);
     marker.bindPopup(l.name);
     markers.push(marker);
   });
-
-  // Update detail sidebar
-  document.getElementById('detailTitle').innerText = loc.name;
-  document.getElementById('detailPluscode').innerText = loc.Pluscode;
-  document.getElementById('detailCondition').innerText = loc.condition || "N/A";
-  document.getElementById('detailPower').innerText = loc.power || "N/A";
-  document.getElementById('detailVerdict').innerText = loc.verdict || "N/A";
-  document.getElementById('detailNotes').innerText = loc.notes || "No additional notes";
-  document.getElementById('detailImage').src = loc.image || "No image available";
-
-  // Optional: Add these for Internet details (if you want them later)
-  // document.getElementById('detailDownload').innerText = loc.download || "N/A";
-  // document.getElementById('detailUpload').innerText = loc.upload || "N/A";
-  // document.getElementById('detailLatency').innerText = loc.latency || "N/A";
+  document.getElementById('detailTitle').innerText=loc.name;
+  document.getElementById('detailPluscode').innerText=loc.Pluscode;
+  document.getElementById('detailCondition').innerText=loc.condition||"N/A";
+  document.getElementById('detailPower').innerText=loc.power||"N/A";
+  document.getElementById('detailVerdict').innerText=loc.verdict||"N/A";
+  document.getElementById('detailNotes').innerText=loc.notes||"No additional notes";
+  document.getElementById('detailImage').src=loc.image||"No image available";
 }
- 
-backBtn.onclick=()=>{
-  mapView.style.display="none";
-  chartsContainer.style.display="grid";
-};
+backBtn.onclick=()=>{mapView.style.display="none";chartsContainer.style.display="grid";};
 
-function refresh(){
-  const data=getFilteredLocations();
-  renderList(data);
-  updateCharts(data);
-}
-resetBtn.onclick=()=>{
-  searchInput.value="";
-  provinceFilter.value="";
-  districtFilter.value="";
-  refresh();
-};
-searchInput.oninput=refresh;
-provinceFilter.onchange=refresh;
-districtFilter.onchange=refresh;
-
+// Refresh
+function refresh(){const data=getFilteredLocations();renderList(data);updateCharts(data);}
+resetBtn.onclick=()=>{searchInput.value="";provinceFilter.value="";districtFilter.value="";refresh();};
+searchInput.oninput=refresh;provinceFilter.onchange=refresh;districtFilter.onchange=refresh;
 refresh();
+
+// Export Functions
+function downloadChart(chart,filename){const link=document.createElement('a');link.href=chart.toBase64Image();link.download=filename;link.click();}
+document.getElementById('downloadPDF').onclick=async function(){const{jsPDF}=window.jspdf;const pdf=new jsPDF();const boxes=document.querySelectorAll('.chart-box');let y=10;for(let box of boxes){const canvas=await html2canvas(box);const img=canvas.toDataURL('image/png');pdf.addImage(img,'PNG',10,y,180,90);y+=95;if(y>250){pdf.addPage();y=10;}}pdf.save('charts.pdf');};
+document.getElementById('downloadCSV').onclick=function(){const d=getFilteredLocations();let csv="Name,District,Region,Condition,Power,Final Verdict,Plus Code,Notes\n";d.forEach(l=>{csv+=`"${l.name}","${l.district}","${l.region}","${l.condition}","${l.power}","${l.verdict}","${l.Pluscode}","${l.notes}"\n`;});const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='locations.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);};
+document.getElementById('printDashboard').onclick=function(){window.print();};
 </script>
 </body>
 </html>
